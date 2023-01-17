@@ -3,6 +3,8 @@ pragma solidity ^0.8.0;
 
 contract FakeNFTMarketplace {
     /// @dev Maintain a mapping of Fake TokenID to Owner addresses
+    // bcz no actual NFT will be transfered on purchase()...
+    // this Fake TokenID will be assigned to the msg.sender using this mapping 
     mapping(uint256 => address) public tokens;
     /// @dev Set the purchase price for each Fake NFT
     uint256 nftPrice = 0.01 ether;
@@ -17,6 +19,9 @@ contract FakeNFTMarketplace {
     function purchase(uint256 _tokenId) external payable {
         require(msg.value == nftPrice, "This NFT costs 0.01 ether");
         tokens[_tokenId] = msg.sender;
+        // in this case, there does NOT exist any NFT Token with _tokenId
+        // just mathematical op of assigning happened here
+        // whereas, in reality, there will be an NFT with _tokenId that will be transfered to msg.sender 
     }
 
     /// @dev getPrice() returns the price of one NFT

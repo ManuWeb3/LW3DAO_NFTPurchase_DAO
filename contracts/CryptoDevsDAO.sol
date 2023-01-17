@@ -67,10 +67,15 @@ contract CryptoDevsDAO is Ownable {
     }
 
     // Create a modifier which only allows a function to be called
-    // consition # 1: if the given proposals' deadline HAS been exceeded
+    // condition # 1: if the given proposals' deadline HAS been exceeded
     // condition # 2: and, if the proposal has not yet been executed
     // hence, 2 require() needed
-    
+    modifier inactiveProposalOnly(uint256 proposalId) {
+        // "=" is a must in below condition as timestamp must be at least 1 ms ahead of the deadline
+        require(proposals[proposalId].deadline <= block.timestamp, "DEADLINE_NOT_EXCEEDED");
+        require(proposals[proposalId].executed == false, "PROPOSAL_ALREADY_EXECUTED");
+        _;
+    }
 
     // all state vars. and modifers set, moving on to functions() incl. constructor() now
 
@@ -110,16 +115,17 @@ contract CryptoDevsDAO is Ownable {
     }
 
     /// @dev voteOnProposal allows a CryptoDevsNFT holder to cast their vote on an active proposal
-    /// @param proposalIndex - the index of the proposal to vote on in the proposals mapping
+    /// @param proposalId - the id of the proposal to vote on in the proposals mapping
     /// @param vote - the type of vote they want to cast
 
     // 3 of the remaining 4 members of struct will be used here
-   function voteOnProposal(uint256 proposalIndex, Vote vote) 
+
+   function voteOnProposal(uint256 proposalId, Vote vote) 
    external
    nftHolderOnly
-   activeProposalOnly(proposalIndex) {
+   activeProposalOnly(proposalId) {
         // again, storage: so that all changes made here to 'proposal' persist outside this f()
-        Proposal storage proposal = proposals[proposalIndex];
+        Proposal storage proposal = proposals[proposalId];
         // more NFTs in hand, more the voting power (1 NFT:1 vote, NOT like 1 address : 1 vote)
         uint256 voterNFTBalance = cryptoDevsNFT.balanceOf(msg.sender);
         // numVotes to check how any votes an NFT holder can cast vis-a-vis UNused NFTs
@@ -152,6 +158,39 @@ contract CryptoDevsDAO is Ownable {
     }
 
     // last member: 'executed' of struct is used here
+    /// @dev executeProposal allows any CryptoDevsNFT holder to execute a proposal after it's deadline has been exceeded and it passed voting
+    /// @param proposalId - the id of the proposal to execute in the proposals mapping
+    function  executeProposal(uint256 proposalId) 
+    external
+    nftHolderOnly
+    inactiveProposalOnly(proposalId)
+    {
+        Proposal storage proposal = proposals[proposalId];
+        // If the proposal has more YAY votes than NAY votes
+        // purchase the NFT from the FakeNFTMarketplace
+        if (proposal.yayVotes > proposal.nayVotes) {
+            uint256 nftPrice = nftMarketplace.getPrice();
+            require(address(this).balance >= nftPrice, "NOT_ENOUGH_FUNDS");
+            nftMarketplace.purchase{value: nftPrice}(proposal.nftTokenId);
+            // () arg. will be here bcz purchase(nft's tokenId)
+            // the proposal returned above in 'storage' already has the requisite Nft-Token-Id as its member
+        }
+        proposal.executed = true;
+        // at the end, so that it can not be executed again... modifier set to revert
+    }
 
+    /// @dev withdrawEther allows the contract owner (deployer) to withdraw the ETH from the contract
+    // if at all the deployer wants to do so as it's the owner
+    function withdraw() external onlyOwner {
+        require(address(this).balance > 0, "Nothing to withdraw; contract balance empty");
+        (bool success, ) = owner().call{value: address(this).balance}("");
+        require(success, "Ether withdrawal failed");
+        // payable(owner()).transfer(amount) - usage prohibited now
+    }
 
+    // The following two functions allow the contract to accept ETH deposits
+    // directly from a wallet without calling a function
+    receive() external payable {}
+
+    fallback() external payable {}
 }
