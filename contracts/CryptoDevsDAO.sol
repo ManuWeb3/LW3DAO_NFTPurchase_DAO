@@ -39,6 +39,7 @@ contract CryptoDevsDAO is Ownable {
     }
 
     // Create a mapping of ID to Proposal
+    // proposals mapping takes in any ID (no order defined) and maps to 
     mapping(uint256 => Proposal) public proposals;
     // Number of proposals that have been created
     uint256 public numProposals;
@@ -90,10 +91,12 @@ contract CryptoDevsDAO is Ownable {
     /// @dev createProposal allows a CryptoDevsNFT holder to create a new proposal in the DAO
     /// @param _nftTokenId - the tokenID of the NFT to be purchased from FakeNFTMarketplace if this proposal passes
     /// @return Returns the proposal index for the newly created proposal
+    // even frontend has fixed the input type as "number".
     function createProposal(uint256 _nftTokenId)
     external
-    nftHolderOnly
+    nftHolderOnly   // => also an INTERNAL Txn
     returns (uint256)  {
+        // INTERNAL Txn
         require(nftMarketplace.available(_nftTokenId), "NFT_NOT_FOR_SALE");
             // numProposals = 0
             // taking zero-based indexing for the created proposals... 
@@ -119,10 +122,10 @@ contract CryptoDevsDAO is Ownable {
     /// @param vote - the type of vote they want to cast
 
     // 3 of the remaining 4 members of struct will be used here
-
+    // onlyOnwer won't come here as all members (NFTHolder only) must be able to vote
    function voteOnProposal(uint256 proposalId, Vote vote) 
    external
-   nftHolderOnly
+   nftHolderOnly    // => also an INTERNAL Txn
    activeProposalOnly(proposalId) {
         // again, storage: so that all changes made here to 'proposal' persist outside this f()
         Proposal storage proposal = proposals[proposalId];
@@ -160,17 +163,21 @@ contract CryptoDevsDAO is Ownable {
     // last member: 'executed' of struct is used here
     /// @dev executeProposal allows any CryptoDevsNFT holder to execute a proposal after it's deadline has been exceeded and it passed voting
     /// @param proposalId - the id of the proposal to execute in the proposals mapping
+    // onlyOwner NOT NECCESARILY needed here bcz we gave the opportunity to executeProposal to any member (NFTHolder only)
     function  executeProposal(uint256 proposalId) 
     external
-    nftHolderOnly
+    nftHolderOnly   // => also an INTERNAL Txn
     inactiveProposalOnly(proposalId)
     {
         Proposal storage proposal = proposals[proposalId];
         // If the proposal has more YAY votes than NAY votes
         // purchase the NFT from the FakeNFTMarketplace
+        // Even if it's a Tie, proposal is deemed to have failed
         if (proposal.yayVotes > proposal.nayVotes) {
+            // INTERNAL Txn
             uint256 nftPrice = nftMarketplace.getPrice();
             require(address(this).balance >= nftPrice, "NOT_ENOUGH_FUNDS");
+            // INTERNAL Txn
             nftMarketplace.purchase{value: nftPrice}(proposal.nftTokenId);
             // () arg. will be here bcz purchase(nft's tokenId)
             // the proposal returned above in 'storage' already has the requisite Nft-Token-Id as its member
