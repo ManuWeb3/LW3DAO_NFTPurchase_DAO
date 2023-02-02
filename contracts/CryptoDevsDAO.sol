@@ -3,9 +3,10 @@ pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-// interfaces imported
+// 3 interfaces imported
 import "./ICryptoDevsNFT.sol";
 import "./IFakeNFTMarketplace.sol";
+import "./IPUSHCommInterface.sol";
 
 // ownable needs to be inherited, and not just left imported in any contract... 
 // that implements 'ownership' functionalities
@@ -39,7 +40,7 @@ contract CryptoDevsDAO is Ownable {
     }
 
     // Create a mapping of ID to Proposal
-    // proposals mapping takes in any ID (no order defined) and maps to 
+    // proposals mapping takes in a Proposal ID and maps to Proposal struct
     mapping(uint256 => Proposal) public proposals;
     // Number of proposals that have been created
     uint256 public numProposals;
@@ -48,6 +49,8 @@ contract CryptoDevsDAO is Ownable {
     IFakeNFTMarketplace nftMarketplace;
 
     ICryptoDevsNFT cryptoDevsNFT;
+
+    IPUSHCommInterface epnsComm;
 
     // Create a modifier which only allows a function to be
     // called by someone who owns at least 1 CryptoDevsNFT
@@ -83,9 +86,10 @@ contract CryptoDevsDAO is Ownable {
     // Create a payable constructor which initializes the contract
     // instances for FakeNFTMarketplace and CryptoDevsNFT
     // The payable allows this constructor to accept an ETH deposit when it is being deployed
-    constructor(address _nftMarketplace, address _cryptoDevsNFT) payable {
+    constructor(address _nftMarketplace, address _cryptoDevsNFT, address _epnsComm) payable {
         nftMarketplace = IFakeNFTMarketplace(_nftMarketplace);
         cryptoDevsNFT = ICryptoDevsNFT(_cryptoDevsNFT);
+        epnsComm = IPUSHCommInterface(_epnsComm);
     }
 
     /// @dev createProposal allows a CryptoDevsNFT holder to create a new proposal in the DAO
@@ -112,9 +116,50 @@ contract CryptoDevsDAO is Ownable {
         proposal.deadline = block.timestamp + 5 minutes;
             // 2 first and foremost members of struct set
             // rest 4 (incl. voters mapping) members will be set in later f(), not here
-        numProposals++;
+        
+        // PUSH Notif to all the DAO members about proposal-creation
+        epnsComm.sendNotification(
+            0x65798ffC4a97e91A67B6E863469bffAAa5604b46, // from channel
+            address(this), // to recipient, put address(this) in case you want Broadcast or Subset. For Targetted put the address to which you want to send
+            bytes(
+                string(
+                    // We are passing identity here:
+                    abi.encodePacked(   // entire "identity" Key's IMPLEMENTATION is input below:
+                        "0", // this is notification's identity: 
+                        // exactly, "0" - for Identity type in Smart Contract (when 2 is for Direct ayload - SDK)                        
+                        // like we see "2+NOTIF_JSON_OBJ" in Metamask, similarly, here it's "0+...."
+                        "+", // segregator
+                        "1", // this is Notif-Payload type:
+                        // exactly, (1, 3 or 4) = (Broadcast, Targetted or Subset)
+                        // "type" property (key) in the payload {} JSON Obj., nested inside Notif Content object
+                        "+", // segregator
+                        "New Proposal", // this is notificaiton title (// no "+" segregator inside the message body)
+                        "+", // segregator
+                        "Hi", // notification body start here                                               
+                        ",",
+                        "\nIt is notified that a new proposal (Proposal Id: ",
+                        uintToString(numProposals),
+                        ") has been created in the DAO by the member:\n",
+                        addressToString(msg.sender), // notification body ends here
+                        "\nYou may kindly cast your vote before the proposal's deadline.",
+                        "\nThank You!"
+                        "\nAnd, have an amazing day."
+                    )
+                    /* {
+                    "verificationProof":"eip155:<chainId>:<TX-Hash>",
+                    "channel": "eip155:42 or 80001:0xd8634c39bbfd4033c0d3289c4515275102423681",
+                    "recipient": "eip155:42 or 80001:0xd8634c39bbfd4033c0d3289c4515275102423681",
+                    "source": "ETH_TEST_GOERLI or POLYGON_TEST_MUMBAI or ETH_MAINNET"
+                    "identity": "0+<Notification-Type>+<Title>+<body>" and the <body> can be extended as you wish
+                    } */
+                )
+            )
+        );          // sendNotification() concludes here (;)
 
-        return numProposals-1;  // basis zero-based "indexing" of our mapping
+        numProposals++;         // incremented for the next proposal, if any.
+
+        return numProposals-1;  // for the current proposal,
+        // zero-based "indexing" of our mapping
     }
 
     /// @dev voteOnProposal allows a CryptoDevsNFT holder to cast their vote on an active proposal
@@ -158,6 +203,31 @@ contract CryptoDevsDAO is Ownable {
         else {
             proposal.nayVotes += numVotes;
         }
+
+        // PUSH Notif to the voter confirming on her vote getting casted
+        epnsComm.sendNotification(
+            0x65798ffC4a97e91A67B6E863469bffAAa5604b46,
+            msg.sender, 
+            bytes(
+                string(                    
+                    abi.encodePacked(   
+                        "0", 
+                        "+", 
+                        "3", 
+                        "+", 
+                        "Vote casted", 
+                        "+", 
+                        "Hello\n",                                        
+                        addressToString(msg.sender),
+                        ",",
+                        "\nThank you for casting your vote on the proposal (Proposal Id: ", 
+                        uintToString(proposalId),
+                        ") and your continued support.",
+                        "\nGood Day!"
+                    )
+                )
+            )
+        );
     }
 
     // last member: 'executed' of struct is used here
@@ -184,6 +254,30 @@ contract CryptoDevsDAO is Ownable {
         }
         proposal.executed = true;
         // at the end, so that it can not be executed again... modifier set to revert
+
+        // PUSH Notif to the DAO member confirming on her vote getting casted
+        epnsComm.sendNotification(
+            0x65798ffC4a97e91A67B6E863469bffAAa5604b46,
+            address(this), 
+            bytes(
+                string(                    
+                    abi.encodePacked(   
+                        "0", 
+                        "+", 
+                        "1", 
+                        "+", 
+                        "Proposal Executed", 
+                        "+", 
+                        "Hello",                                        
+                        ",",
+                        "\nIt is notified that the proposal (Proposal Id: ",
+                        uintToString(proposalId),
+                        ") has been executed.",
+                        "\nGood Day!"
+                    )
+                )
+            )
+        );        
     }
 
     /// @dev withdrawEther allows the contract owner (deployer) to withdraw the ETH from the contract
@@ -200,4 +294,36 @@ contract CryptoDevsDAO is Ownable {
     receive() external payable {}
 
     fallback() external payable {}
+
+    // Helper function to convert address type to string type
+    function addressToString(address _address) internal pure returns(string memory) {
+        bytes32 _bytes = bytes32(uint256(uint160(_address)));
+        bytes memory HEX = "0123456789abcdef";
+        bytes memory _string = new bytes(42);
+        _string[0] = '0';
+        _string[1] = 'x';
+        for(uint i = 0; i < 20; i++) {
+            _string[2+i*2] = HEX[uint8(_bytes[i + 12] >> 4)];
+            _string[3+i*2] = HEX[uint8(_bytes[i + 12] & 0x0f)];
+        }
+        return string(_string);
+    }
+
+    // Helper function to convert uint256 type to string type
+    function uintToString(uint256 number) public pure returns (string memory) {
+        uint256 divider = 10;
+        uint256 digits = 1;
+        while (number >= divider) {
+            divider *= 10;
+            digits++;
+        }
+
+        bytes memory result = new bytes(digits);
+        for (uint256 i = 0; i < digits; i++) {
+            result[digits - 1 - i] = bytes1(uint8(48 + number % 10));
+            number /= 10;
+        }
+
+        return string(result);
+    }
 }
